@@ -1,0 +1,16 @@
+# dumped snapshot bundles (regenerate from the dashboard / runner)
+data/*.sph
+data/
+
+# node
+sim/node_modules/
+sim/dist/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# os
+.DS_Store

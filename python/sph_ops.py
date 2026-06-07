@@ -88,6 +88,35 @@ def sph_filter(snap, field: np.ndarray, H: float, m: float, L: float) -> np.ndar
     return out.reshape(field.shape)
 
 
+def xsph_smooth(snap, field: np.ndarray, H: float, m: float, L: float,
+                eps: float = 0.8) -> np.ndarray:
+    """XSPH smoothing of Rennehan et al. (2019), eq 20:
+
+        f_bar_a = f_a + eps * sum_b (m_b / <rho_ab>) (f_b - f_a) W(r_ab, H)
+
+    with <rho_ab> the HARMONIC mean of the filter-scale densities rho(H), and
+    eps=0.8 (high-k modes damped to (1-eps), not removed). Constants and (to
+    first order) linear fields are preserved. `field` is (N,) or (N, ...).
+    Apply twice (H, then 2H) for the doubly-filtered/test-filtered quantities.
+    """
+    field = np.asarray(field, dtype=np.float64)
+    N = snap.x.size
+    vec = field.reshape(N, -1)
+    src, dst = _pairs(snap)
+    _, _, r = _disp(snap, src, dst, L)
+    w = kernel_w(r, H)
+    # density at the filter scale H (include self term)
+    w0 = float(kernel_w(np.array([0.0]), H)[0])
+    rhoH = np.full(N, m * w0)
+    np.add.at(rhoH, src, m * w)
+    rho_ab = 2.0 * rhoH[src] * rhoH[dst] / (rhoH[src] + rhoH[dst])   # harmonic mean
+    wv = (m / rho_ab) * w
+    delta = np.zeros_like(vec)
+    np.add.at(delta, src, wv[:, None] * (vec[dst] - vec[src]))
+    out = vec + eps * delta
+    return out.reshape(field.shape)
+
+
 def sph_gradient(snap, field: np.ndarray, H: float, m: float, L: float,
                  renorm: bool = True) -> np.ndarray:
     """SPH gradient of a scalar `field` (N,). Returns (N, 2) = [dA/dx, dA/dy].

@@ -88,6 +88,38 @@ def sph_filter(snap, field: np.ndarray, H: float, m: float, L: float) -> np.ndar
     return out.reshape(field.shape)
 
 
+def mls_gradient(snap, field: np.ndarray, H: float, L: float) -> np.ndarray:
+    """GIZMO-style moving-least-squares gradient (Hopkins 2015): does NOT use the
+    kernel derivative. Uses W as a least-squares weight and the geometric moment
+    matrix E = sum_j W_ij (x_j-x_i)(x_j-x_i)^T:
+
+        grad A_i = E_i^{-1} sum_j W_ij (A_j - A_i)(x_j - x_i)
+
+    First-order consistent (reproduces linear fields exactly). `field` is (N,).
+    Returns (N, 2). This is the estimator the Rennehan+2019 strain (eq 12) uses.
+    """
+    field = np.asarray(field, dtype=np.float64)
+    N = snap.x.size
+    src, dst = _pairs(snap)
+    dx, dy, r = _disp(snap, src, dst, L)
+    rx, ry = -dx, -dy                      # x_j - x_i
+    w = kernel_w(r, H)
+    E00 = np.zeros(N); E01 = np.zeros(N); E11 = np.zeros(N)
+    b0 = np.zeros(N); b1 = np.zeros(N)
+    np.add.at(E00, src, w * rx * rx)
+    np.add.at(E01, src, w * rx * ry)
+    np.add.at(E11, src, w * ry * ry)
+    dA = field[dst] - field[src]
+    np.add.at(b0, src, w * dA * rx)
+    np.add.at(b1, src, w * dA * ry)
+    det = E00 * E11 - E01 * E01
+    good = np.abs(det) > 1e-20
+    gx = np.zeros(N); gy = np.zeros(N)
+    gx[good] = (E11[good] * b0[good] - E01[good] * b1[good]) / det[good]
+    gy[good] = (-E01[good] * b0[good] + E00[good] * b1[good]) / det[good]
+    return np.stack([gx, gy], axis=1)
+
+
 def xsph_smooth(snap, field: np.ndarray, H: float, m: float, L: float,
                 eps: float = 0.8) -> np.ndarray:
     """XSPH smoothing of Rennehan et al. (2019), eq 20:
